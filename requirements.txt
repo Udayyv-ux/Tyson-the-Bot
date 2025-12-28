@@ -1,5 +1,5 @@
-streamlit==1.25.0
-groq
+streamlit>=1.32.0
+groq>=1.0.0
 
 
 
