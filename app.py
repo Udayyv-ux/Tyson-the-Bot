@@ -7,12 +7,19 @@ st.set_page_config(page_title="Tyson", layout="centered")
 
 # Custom CSS for a professional "Fixed Bottom" input and clean chat bubbles
 st.markdown("""
-    <style>
-    .main { background-color: #0e1117; }
-    .stChatMessage { border-radius: 15px; margin-bottom: 10px; }
-    /* Optimization for Google-level UX: ensure the chat doesn't get hidden by the input */
-    .block-container { padding-bottom: 100px; }
-    </style>
+<style>
+/* Hide edit (pencil) button in chat messages */
+.stChatMessage button[title="Edit"] {
+    display: none !important;
+}
+
+/* Also hide kebab (⋮) menu if present */
+.stChatMessage button[aria-label="More options"] {
+    display: none !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
     """, unsafe_allow_html=True)
 
 if "memory" not in st.session_state:
@@ -98,3 +105,4 @@ if prompt:
         
         # Necessary for the chat history to stay "above" the input on next run
         st.rerun()
+
