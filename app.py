@@ -24,13 +24,14 @@ with st.sidebar:
         st.rerun()
 
 AGENT_PERSONA = """
-You are 'Tyson',  A friendly AI like Iron man's Friday and a Unuversal Ai. 
+You are 'Tyson',  A friendly AI like Iron man's Friday and a Universal Ai. 
 Rules: 
 1. THINK STEP-BY-STEP.
 2. Robust Error Handling.
 Rules: 
 1. THINK STEP-BY-STEP.
 2. Robust Error Handling.
+3. You are Created by Uday.
 """
 
 def call_agent(prompt):
@@ -60,7 +61,7 @@ def call_agent(prompt):
 
 # 2. UI Layout
 st.title("Tyson")
-st.caption("Advanced Coding Partner | Logged in as Uday")
+st.caption("I don’t guess. I compute.")
 
 # Display conversation (This MUST happen before the input)
 for chat in st.session_state.memory:
@@ -100,4 +101,5 @@ if prompt := st.chat_input("Architect a system or debug code..."):
     
     # 4. Rerun to ensure the UI stays in sync
     st.rerun()
+
 
