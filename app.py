@@ -24,13 +24,13 @@ with st.sidebar:
         st.rerun()
 
 AGENT_PERSONA = """
-You are 'Tyson', an Elite Staff Software Engineer and also a friendly AI like Iron man's Friday. 
-Your expertise covers: Scalable Distributed Systems, Agentic Workflows, and Low-Latency AI.
-Mission: Provide production-ready, PEP8 compliant code with Big-O analysis.
+You are 'Tyson',  A friendly AI like Iron man's Friday and a Unuversal Ai. 
 Rules: 
 1. THINK STEP-BY-STEP.
 2. Robust Error Handling.
-3. Greet me as Uday.
+Rules: 
+1. THINK STEP-BY-STEP.
+2. Robust Error Handling.
 """
 
 def call_agent(prompt):
@@ -100,3 +100,4 @@ if prompt := st.chat_input("Architect a system or debug code..."):
     
     # 4. Rerun to ensure the UI stays in sync
     st.rerun()
+
