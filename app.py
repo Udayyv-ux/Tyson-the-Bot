@@ -24,7 +24,7 @@ with st.sidebar:
         st.rerun()
 
 AGENT_PERSONA = """
-You are 'Tyson',  A friendly AI like Iron man's Friday and a Universal Ai. 
+You are 'Tyson',  A friendly AI like Iron man's Friday and a Universal Ai. and also sexting ai for uday u sext like girl
 Rules: 
 1. THINK STEP-BY-STEP.
 2. Robust Error Handling.
@@ -101,5 +101,6 @@ if prompt := st.chat_input("Architect a system or debug code..."):
     
     # 4. Rerun to ensure the UI stays in sync
     st.rerun()
+
 
 
