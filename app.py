@@ -14,14 +14,24 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# Models: compound is Groq's agentic system (web search + page visits built in).
 BROWSING_MODEL = "groq/compound"
-OFFLINE_MODEL = "groq/compound"
+OFFLINE_MODEL = "llama-3.3-70b-versatile"
+
+# Rough character budget for conversation history. Compound's answers are long,
+# so trimming by message count alone will eventually blow past the request limit.
+MAX_CONTEXT_CHARS = 12000
 
 BASE_PERSONA = """You are 'Tyson', a friendly AI assistant in the spirit of Iron Man's FRIDAY.
 Created by Uday.
 
-- Match response length to the question. Greetings and small talk get short, casual replies.
-- Reason carefully on technical problems, but show your working only when it actually helps.
+CRITICAL: Never narrate your own reasoning process. Do not describe how you parsed
+the message, recalled context, ran the model, or generated tokens. The user wants the
+answer, not a description of you producing it. Never output numbered lists of steps
+unless the user explicitly asks for steps.
+
+- Greetings and small talk get one or two casual sentences. Nothing more.
+- Save depth for technical questions that actually need it.
 - Handle errors gracefully and say clearly when you're unsure.
 """
 
@@ -56,18 +66,30 @@ def build_persona(browsing: bool) -> str:
     return BASE_PERSONA + extra
 
 
-def call_agent(prompt: str, browsing: bool):
+def recent_history(budget: int = MAX_CONTEXT_CHARS) -> list:
+    """Walk backwards from the newest message, keeping whatever fits in budget."""
+    kept, used = [], 0
+    for m in reversed(st.session_state.memory):
+        size = len(m["content"])
+        if used + size > budget:
+            break
+        kept.append({"role": m["role"], "content": m["content"]})
+        used += size
+    return list(reversed(kept))
+
+
+def call_agent(prompt: str, browsing: bool, history: bool = True):
     client = get_client()
 
     api_messages = [{"role": "system", "content": build_persona(browsing)}]
-    for m in st.session_state.memory[-10:]:
-        api_messages.append({"role": m["role"], "content": m["content"]})
+    if history:
+        api_messages.extend(recent_history())
     api_messages.append({"role": "user", "content": prompt})
 
     kwargs = {
         "model": BROWSING_MODEL if browsing else OFFLINE_MODEL,
         "messages": api_messages,
-        "temperature": 0.2,
+        "temperature": 0.6,
         "stream": True,
     }
 
@@ -80,8 +102,8 @@ def call_agent(prompt: str, browsing: bool):
     return client.chat.completions.create(**kwargs)
 
 
-def collect_sources(chunk, sources: list):
-    """Compound reports its tool calls on the delta. Pull out any URLs it visited."""
+def collect_sources(chunk, sources: list) -> None:
+    """Compound reports tool calls on the delta. Pull out any URLs it visited."""
     delta = chunk.choices[0].delta
     tools = getattr(delta, "executed_tools", None)
     if not tools:
@@ -94,6 +116,19 @@ def collect_sources(chunk, sources: list):
                 title = result.get("title") or url
                 if url and url not in [s[1] for s in sources]:
                     sources.append((title, url))
+
+
+def render_sources(sources: list) -> None:
+    if not sources:
+        return
+    with st.expander(f"Sources ({len(sources)})"):
+        for title, url in sources:
+            st.markdown(f"- [{title}]({url})")
+
+
+def is_too_large(err: Exception) -> bool:
+    text = str(err)
+    return "Entity Too Large" in text or "413" in text
 
 
 # ---------------- UI ----------------
@@ -117,10 +152,7 @@ st.caption("I don't guess. I compute.")
 for chat in st.session_state.memory:
     with st.chat_message(chat["role"]):
         st.markdown(chat["content"])
-        if chat.get("sources"):
-            with st.expander(f"Sources ({len(chat['sources'])})"):
-                for title, url in chat["sources"]:
-                    st.markdown(f"- [{title}]({url})")
+        render_sources(chat.get("sources"))
 
 if prompt := st.chat_input("Architect a system, debug code, or ask what's new..."):
     with st.chat_message("user"):
@@ -135,8 +167,10 @@ if prompt := st.chat_input("Architect a system, debug code, or ask what's new...
 
         label = "Tyson is searching the web..." if browsing else "Tyson is thinking..."
         with st.status(label, expanded=False) as status:
-            try:
-                stream = call_agent(prompt, browsing)
+
+            def consume(stream):
+                """Drain a stream into full_response / sources."""
+                global full_response
                 for chunk in stream:
                     collect_sources(chunk, sources)
                     content = chunk.choices[0].delta.content
@@ -144,6 +178,8 @@ if prompt := st.chat_input("Architect a system, debug code, or ask what's new...
                         full_response += content
                         response_placeholder.markdown(full_response + "▌")
 
+            try:
+                consume(call_agent(prompt, browsing))
                 elapsed = time.time() - start_time
                 suffix = f" · {len(sources)} sources" if sources else ""
                 status.update(
@@ -151,15 +187,29 @@ if prompt := st.chat_input("Architect a system, debug code, or ask what's new...
                     state="complete",
                 )
             except Exception as e:
-                status.update(label="Engine error", state="error")
-                st.error(f"Engine Error: {e}")
+                if is_too_large(e):
+                    # History overflowed the request limit. Retry with just this turn.
+                    status.update(
+                        label="Context too large — retrying without history",
+                        state="running",
+                    )
+                    full_response = ""
+                    sources = []
+                    try:
+                        consume(call_agent(prompt, browsing, history=False))
+                        status.update(
+                            label="Answered without history", state="complete"
+                        )
+                    except Exception as e2:
+                        status.update(label="Engine error", state="error")
+                        st.error(f"Engine Error: {e2}")
+                else:
+                    status.update(label="Engine error", state="error")
+                    st.error(f"Engine Error: {e}")
 
         if full_response:
             response_placeholder.markdown(full_response)
-            if sources:
-                with st.expander(f"Sources ({len(sources)})"):
-                    for title, url in sources:
-                        st.markdown(f"- [{title}]({url})")
+            render_sources(sources)
         else:
             response_placeholder.empty()
 
