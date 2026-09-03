@@ -16,11 +16,17 @@ st.markdown("""
 
 # Models: compound is Groq's agentic system (web search + page visits built in).
 BROWSING_MODEL = "groq/compound"
+# compound-mini runs one tool call per turn instead of iterating, so it can't
+# balloon its own context. Used as the retry when compound returns a 413.
+FALLBACK_MODEL = "groq/compound-mini"
 OFFLINE_MODEL = "llama-3.3-70b-versatile"
 
 # Rough character budget for conversation history. Compound's answers are long,
 # so trimming by message count alone will eventually blow past the request limit.
 MAX_CONTEXT_CHARS = 12000
+
+# Keep compound's own tool context small. Raise if answers feel too thin.
+MAX_SEARCH_RESULTS = 3
 
 BASE_PERSONA = """You are 'Tyson', a friendly AI assistant in the spirit of Iron Man's FRIDAY.
 Created by Uday.
@@ -78,7 +84,7 @@ def recent_history(budget: int = MAX_CONTEXT_CHARS) -> list:
     return list(reversed(kept))
 
 
-def call_agent(prompt: str, browsing: bool, history: bool = True):
+def call_agent(prompt: str, browsing: bool, history: bool = True, model: str = None):
     client = get_client()
 
     api_messages = [{"role": "system", "content": build_persona(browsing)}]
@@ -87,16 +93,20 @@ def call_agent(prompt: str, browsing: bool, history: bool = True):
     api_messages.append({"role": "user", "content": prompt})
 
     kwargs = {
-        "model": BROWSING_MODEL if browsing else OFFLINE_MODEL,
+        "model": model or (BROWSING_MODEL if browsing else OFFLINE_MODEL),
         "messages": api_messages,
         "temperature": 0.6,
         "stream": True,
     }
 
     if browsing:
-        # Optional: steer what compound is allowed to reach for.
+        # web_search only. visit_website pulls whole page bodies into compound's
+        # own context and is the usual cause of a server-side 413 on this model.
         kwargs["compound_custom"] = {
-            "tools": {"enabled_tools": ["web_search", "visit_website"]}
+            "tools": {
+                "enabled_tools": ["web_search"],
+                "search_settings": {"max_results": MAX_SEARCH_RESULTS},
+            }
         }
 
     return client.chat.completions.create(**kwargs)
@@ -188,17 +198,26 @@ if prompt := st.chat_input("Architect a system, debug code, or ask what's new...
                 )
             except Exception as e:
                 if is_too_large(e):
-                    # History overflowed the request limit. Retry with just this turn.
+                    # Request overflowed. Retry on the lighter agent with no
+                    # history: compound-mini makes a single tool call per turn,
+                    # so its context can't snowball the way compound's does.
                     status.update(
-                        label="Context too large — retrying without history",
+                        label="Too large — retrying on lighter engine",
                         state="running",
                     )
                     full_response = ""
                     sources = []
                     try:
-                        consume(call_agent(prompt, browsing, history=False))
+                        consume(
+                            call_agent(
+                                prompt,
+                                browsing,
+                                history=False,
+                                model=FALLBACK_MODEL,
+                            )
+                        )
                         status.update(
-                            label="Answered without history", state="complete"
+                            label=f"Answered via {FALLBACK_MODEL}", state="complete"
                         )
                     except Exception as e2:
                         status.update(label="Engine error", state="error")
