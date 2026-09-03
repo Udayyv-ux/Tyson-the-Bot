@@ -35,7 +35,7 @@ def call_agent(prompt):
             api_messages.append({"role": m["role"], "content": m["content"]})
         api_messages.append({"role": "user", "content": prompt})
         return client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="groq/compound",
             messages=api_messages,
             temperature=0.2,
             stream=True
